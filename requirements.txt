@@ -1,0 +1,7 @@
+SimpleITK==2.3.1
+scikit-image
+pathlib
+nibabel
+sparc_me==2.2.11
+pydicom==2.4.3
+pandas==2.2.3
