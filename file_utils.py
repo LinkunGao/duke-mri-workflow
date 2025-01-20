@@ -16,8 +16,10 @@ def delete_folder(folder_path):
 def delete_zero_size_nrrd_files(folder_path):
     if folder_path.exists() and folder_path.is_dir():
         nrrd_files = folder_path.rglob("*")
-        if nrrd_files.is_file() and nrrd_files.stat().st_size == 0:
-            nrrd_files.unlink()
+        for file in nrrd_files:
+            if file.is_file() and file.stat().st_size == 0:
+                print("delete："+file.name)
+                file.unlink()
 
 
 def get_first_file(parent_folder):
