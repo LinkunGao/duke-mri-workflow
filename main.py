@@ -1,5 +1,5 @@
 import sparc_me as sm
-from file_utils import delete_folder, get_first_file, get_first_child, find_file
+from file_utils import delete_folder, get_first_file, get_first_child, find_file, delete_zero_size_nrrd_files
 from tools import getDicomInfo, dcmseries2nrrd
 from pathlib import Path
 from shutil import copy2
@@ -19,6 +19,7 @@ case_names = []
 contrasts = ["ax dyn pre", "ax dyn 1st pass", "ax dyn 2nd pass", "ax dyn 3rd pass", "ax dyn 4th pass"]
 cases = []
 
+
 # TODO 1: create dataset
 def createWorkflowDataset(dest_dir):
     global dataset
@@ -32,6 +33,7 @@ def createWorkflowDataset(dest_dir):
 
     dataset.save()
 
+
 # TODO 2: get bounding box data
 def get_bounding_box_data(data_path):
     global bounding_box_data
@@ -42,6 +44,7 @@ def get_bounding_box_data(data_path):
         bounding_box_data = json.load(f)
     case_names = list(bounding_box_data.keys())
     case_names.sort()
+
 
 # TODO 3: read DUKE uni breast MRI metadata
 def read_duke_breast_metadata(data_path):
@@ -65,6 +68,7 @@ def read_duke_breast_metadata(data_path):
             "contrasts": temp
         })
 
+
 # TODO 4: convert Dicom to NRRD
 def generate_self_data_structure(dicom_source_dir, self_dest_dir, ignore_dirs=[]):
     """
@@ -80,31 +84,42 @@ def generate_self_data_structure(dicom_source_dir, self_dest_dir, ignore_dirs=[]
     if dicom_source_dir.is_dir():
         for case in cases:
             for c in case["contrasts"].keys():
-                case["contrasts"][c] = dicom_source_dir/case["name"]/case["study_uid"]/case["contrasts"][c]
+                case["contrasts"][c] = dicom_source_dir / case["name"] / case["study_uid"] / case["contrasts"][c]
         # get the first dicom file
         all_temp_cases = []
         for idx, case in enumerate(cases):
             case_root_path = self_dest_dir / case["name"] / f"sub-{case['name'].lower()}" / "sam-1"
             temp = {
+                # source is dcm folder path
                 "source": case["contrasts"],
+                # dest is nrrd file path
                 "dest": case_root_path / "nrrd" / "origin"
             }
             all_temp_cases.append(temp)
-        #
-        #     # TODO 3.1 generate folder structure
-        #
+            #
+            #     TODO 3.1 generate folder structure
+            #
             generate_folder_structure(case_root_path, case["name"])
-        #     # TODO 3.2 convert nrrd
-        #     need to comment the code, after you already have all nrrds generated, this is very slow, use outside processor 3.2 outside
-        #     dcmseries2nrrd(temp['source'], temp['dest'], 'c')
-        #
-        #     # TODO 3.3 convert nii register image to nrrd
-        #
-        #     # TODO 3.4 Move files to sds dataset and modify manifest.xlsx file
+            #     TODO 3.2 convert nrrd
+            #     need to comment the code, after you already have all nrrds generated, this is very slow, use outside processor 3.2 outside
+            #     dcmseries2nrrd(temp['source'], temp['dest'], 'c')
+            #
+            #     TODO 3.3 convert nii register image to nrrd
+
+            #     TODO 3.4 Move files to sds dataset and modify manifest.xlsx file
             move_files_modify_manifest(case_root_path, self_dest_dir, case["name"])
+
+            #     TODO 3.4 if registration images have not ready, let's mock data, this is based on you've already haven origin nrrds
+            mock_register_nrrd(temp["dest"], case["name"])
+            # TODO 3.5 delete all origin/registration zero size nrrd files
+            delete_zero_size_nrrd_files(
+                dataset._dataset_path / "derivative" / f"sub-{case['name'].lower()}" / "sam-1" / "nrrd" / "origin")
+            delete_zero_size_nrrd_files(
+                dataset._dataset_path / "derivative" / f"sub-{case['name'].lower()}" / "sam-1" / "nrrd" / "registration")
 
         # TODO: 3.2 outside covert nrrd
         # processor_for_convert_nrrd(all_temp_cases)
+
 
 
     else:
@@ -124,6 +139,7 @@ def processor_for_convert_nrrd(all_temp_cases):
             except Exception as e:
                 print(f"task fail: {e}")
 
+
 # TODO 3.1 generate folder structure
 def generate_folder_structure(case_root_path, patientID):
     # TODO 3.1.1 Create nrrd/origin, nrrd/registration
@@ -141,15 +157,22 @@ def generate_folder_structure(case_root_path, patientID):
 
     # TODO 3.1.2 Create segmentation
     nipple_points_json = case_root_path / "segmentation/nipple_points.json"
+    outer_rib_mesh_surface_points_json = case_root_path / "segmentation/outer_rib_mesh_surface_points.json"
+    skin_mesh_surface_points_json = case_root_path / "segmentation/skin_mesh_surface_points.json"
+    prone_surface_obj = case_root_path / "segmentation/prone_surface.obj"
+    tumour_window_json = case_root_path / "segmentation/tumour_window.json"
 
     # TODO 3.1.3 Create segmentation_manual
     mask_json = case_root_path / "segmentation_manual/mask.json"
     mask_nii = case_root_path / "segmentation_manual/mask.nii.gz"
     mask_obj = case_root_path / "segmentation_manual/mask.obj"
     sphere_points_json = case_root_path / "segmentation_manual/sphere_points.json"
+    tumour_timer_study_json = case_root_path / "segmentation_manual/tumour_position_study.json"
 
     paths_need_create = [contrast0, contrast1, contrast2, contrast3, contrast4, r0, r1, r2, r3, r4, nipple_points_json,
-                         mask_json, mask_nii, mask_obj, sphere_points_json]
+                         mask_json, mask_nii, mask_obj, sphere_points_json, tumour_timer_study_json,
+                         outer_rib_mesh_surface_points_json, skin_mesh_surface_points_json, prone_surface_obj,
+                         tumour_window_json]
 
     # TODO 3.1.4 Generate paths
 
@@ -177,6 +200,18 @@ def generate_folder_structure(case_root_path, patientID):
     #         destination_file_path.unlink()
     #
     #     copy2(source_file_path, destination_file_path)
+
+    # TODO 3.1.6 Generate tumour position
+    tumour_data = bounding_box_data[patientID]["origin"]
+    tumour_window = {
+        "bounding_box_max_point":  tumour_data["bounding_box_max_point"],
+        "bounding_box_min_point": tumour_data["bounding_box_min_point"],
+        "center": tumour_data["center"],
+        "validate": False
+    }
+
+    with open(tumour_window_json, "w") as json_file:
+        json.dump(tumour_window, json_file)
 
 
 # TODO 3.4 Move files to sds dataset and modify manifest.xlsx file
@@ -237,6 +272,7 @@ def _update_manifest(sample_file_path, patientID, manifest):
 
     manifest.save()
 
+
 def find_col_element(element, metadata):
     elements = metadata.data.columns.tolist()
     matching_indices = metadata.validate_input(element, elements)
@@ -245,6 +281,16 @@ def find_col_element(element, metadata):
     else:
         msg = f"No '{element}' valid element is found! Please find correct element in {metadata.metadata_file}.xlsx file."
         raise KeyError(msg)
+
+
+def mock_register_nrrd(origin_folder, case_name):
+    files = origin_folder.rglob("*.nrrd")
+
+    target_folder = dataset._dataset_path / "derivative"
+    for idx, file in enumerate(files):
+        target_path = target_folder / Path(*file.parts[2:5]) / "registration" / f"r{idx}.nrrd"
+        shutil.copy(file, target_path)
+
 
 if __name__ == '__main__':
     save_dir = Path("./workdir")
