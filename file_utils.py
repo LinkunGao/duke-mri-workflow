@@ -18,7 +18,7 @@ def delete_zero_size_nrrd_files(folder_path):
         nrrd_files = folder_path.rglob("*")
         for file in nrrd_files:
             if file.is_file() and file.stat().st_size == 0:
-                print("delete："+file.name)
+                print("delete：" + file.name)
                 file.unlink()
 
 
@@ -62,3 +62,38 @@ def find_file(directory_path, filename):
 
     # Return None if no 'mask.json' file is found in the directory or its subdirectories
     return None
+
+
+def is_empty_file(p: Path):
+    return (not p.exists()) or (p.stat().st_size == 0)
+
+
+def rebuild_sam_dirs(case_root_path: Path, prefix: str, filename_pattern: str):
+    """
+    prefix: 'sam'
+    filename_pattern: 'c{}.nrrd' or 'r{}.nrrd'
+    """
+
+    # 1. get all sam-* dir
+    sam_dirs = sorted(case_root_path.glob(f"{prefix}-*"), key=lambda x: int(x.name.split('-')[1]))
+
+    # 2. get all not empty file
+    valid_items = []
+    for sam_dir in sam_dirs:
+        index = int(sam_dir.name.split('-')[1])
+        file_path = sam_dir / filename_pattern.format(index - 1)  # c0,nrrd corresponding to sam-1
+
+        if not is_empty_file(file_path):
+            valid_items.append(file_path)
+
+    # 3. delete all old sam folders
+    for sam_dir in sam_dirs:
+        shutil.rmtree(sam_dir, ignore_errors=True)
+
+    # 4. recreate sam-i by the new order
+    for new_idx, old_file in enumerate(valid_items, start=1):
+        new_dir = case_root_path / f"{prefix}-{new_idx}"
+        new_dir.mkdir(parents=True, exist_ok=True)
+
+        new_filename = filename_pattern.format(new_idx - 1)
+        shutil.copy(old_file, new_dir / new_filename)
