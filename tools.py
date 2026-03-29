@@ -41,16 +41,25 @@ def dcmseries2nrrd(source, dest, filename):
     '''
 
     reader = sitk.ImageSeriesReader()
+    total_contrasts = len(source)
+    case_label = dest.parts[-4] if len(dest.parts) >= 4 else str(dest)
+    print(f"  [{case_label}] 开始，共 {total_contrasts} 个 contrast", flush=True)
     for idx, s in enumerate(source.keys()):
         datapath = source[s].as_posix()
+        print(f"  [{case_label}] ({idx+1}/{total_contrasts}) 读取 DICOM: {s}  路径: {datapath}", flush=True)
         dicom_series = reader.GetGDCMSeriesFileNames(datapath)
+        print(f"  [{case_label}] ({idx+1}/{total_contrasts}) 找到 {len(dicom_series)} 张 DICOM 文件，正在解析...", flush=True)
         reader.SetFileNames(dicom_series)
         image = reader.Execute()
+        size = image.GetSize()
+        print(f"  [{case_label}] ({idx+1}/{total_contrasts}) 图像尺寸: {size}，正在写入 NRRD...", flush=True)
         if not dest.exists():
-            # Create the folder if it doesn't exist
             dest.mkdir(parents=True, exist_ok=True)
         name = dest / (filename + str(idx) + '.nrrd')
         sitk.WriteImage(image, name, useCompression=True)
+        file_size_mb = name.stat().st_size / (1024 * 1024)
+        print(f"  [{case_label}] ({idx+1}/{total_contrasts}) 写入完成: {name.name}  ({file_size_mb:.1f} MB)", flush=True)
+    print(f"  [{case_label}] 全部 contrast 转换完毕", flush=True)
 
 
 def convert_nii_to_nrrd(source, dest, origin_pre_nrrd):
