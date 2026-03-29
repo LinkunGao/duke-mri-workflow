@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pprint import pprint
 import json
 import pandas as pd
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import psutil
 
 dataset = None
@@ -18,9 +18,9 @@ bounding_box_data = None
 duke_metadata = None
 case_names = []
 
-contrasts = ["ax dyn pre", "ax dyn 1st pass", "ax dyn 2nd pass", "ax dyn 3rd pass", "ax dyn 4th pass"]
+# contrasts = ["ax dyn pre", "ax dyn 1st pass", "ax dyn 2nd pass", "ax dyn 3rd pass", "ax dyn 4th pass"]
 # for case 494
-# contrasts = ["ax 3d dyn pre", "ax 3d dyn 1st pass", "ax 3d dyn 2nd pass", "ax 3d dyn 3rd pass", "ax 3d dyn 4th pass"]
+contrasts = ["ax 3d dyn pre", "ax 3d dyn 1st pass", "ax 3d dyn 2nd pass", "ax 3d dyn 3rd pass", "ax 3d dyn 4th pass"]
 duke_cases = []
 
 
@@ -98,6 +98,7 @@ def generate_self_data_structure(dicom_source_dir, self_dest_dir, ignore_dirs=[]
             case_root_processed_path = self_dest_dir / "processed" / case["name"]
             case_root_processed_path.mkdir(exist_ok=True, parents=True)
             temp = {
+                "name": case["name"],
                 # source is dcm folder path
                 "source": case["contrasts"],
                 # dest is nrrd file path
@@ -110,11 +111,11 @@ def generate_self_data_structure(dicom_source_dir, self_dest_dir, ignore_dirs=[]
             #     TODO 3.2 convert nrrd
             #     need to comment the code, after you already have all nrrds generated, this is very slow, use outside processor 3.2 outside
             # dcmseries2nrrd(temp['source'], temp['dest'], 'c')
-            #     TODO 3.2.1 re-organize the folder structure once convert the dcm to nrrd image we can use formate
+            #     TODO 3.2.1 depends on 3.2 re-organize the folder structure once convert the dcm to nrrd image we can use formate
             format_folder_structure(case_root_origin_path, case_root_processed_path)
             #     TODO 3.3 convert nii register image to nrrd
 
-            #     TODO 3.4 Move files to sds dataset and modify manifest.xlsx file
+            #     TODO 3.4 depends on 3.2 Move files to sds dataset and modify manifest.xlsx file
             move_files(case_root_processed_path)
 
             #     TODO 3.4 if registration images have not ready, let's mock data, this is based on you've already haven origin nrrds
@@ -134,16 +135,23 @@ def generate_self_data_structure(dicom_source_dir, self_dest_dir, ignore_dirs=[]
 
 
 def processor_for_convert_nrrd(all_temp_cases):
+    total = len(all_temp_cases)
+    print(f"[convert] 共 {total} 个案例，开始转换...", flush=True)
     with ProcessPoolExecutor(max_workers=60) as executor:
-        futures = [
-            executor.submit(dcmseries2nrrd, temp['source'], temp['dest'], 'c')
+        future_to_name = {
+            executor.submit(dcmseries2nrrd, temp['source'], temp['dest'], 'c'): temp['name']
             for temp in all_temp_cases
-        ]
-        for future in futures:
+        }
+        done_count = 0
+        for future in as_completed(future_to_name):
+            name = future_to_name[future]
+            done_count += 1
             try:
-                future.result()  # wait for task finish
+                future.result()
+                print(f"[{done_count}/{total}] 完成: {name}", flush=True)
             except Exception as e:
-                print(f"task fail: {e}")
+                print(f"[{done_count}/{total}] 失败: {name} -> {e}", flush=True)
+    print(f"[convert] 全部转换完成（共 {total} 个）", flush=True)
 
 
 # TODO 3.1 generate folder structure
@@ -267,7 +275,7 @@ def move_files(subject_root_path):
             key=lambda x: int(x.name.split("-")[1].rstrip(","))
         )
         subject = Subject()
-        for subdir in subdirs_sorted:
+        for idx, subdir in enumerate(subdirs_sorted):
             first_file = next(
                 (p for p in subdir.iterdir() if p.is_file()),
                 None
@@ -276,13 +284,16 @@ def move_files(subject_root_path):
             sample.add_path(subdir)
             subject.add_samples([sample])
             if first_file.suffix == ".nrrd" and first_file.name.startswith("c"):
-                sample.set_value(element='sample type',
-                             value="origin")
+                if idx == 0:
+                    sample.set_value(element='sample type',
+                                     value="contrast_pre")
+                else:
+                    sample.set_value(element='sample type',
+                                     value=f"contrast_{idx}")
             else:
                 sample.set_value(element='sample type',
                                  value=first_file.stem.split('.')[0])
         dataset.add_subjects([subject])
-
 
 
 def _update_dataset_description():
@@ -296,6 +307,7 @@ def _update_dataset_description():
         element='Contributor orcid',
         values=["https://orcid.org/0000-0001-8170-199X"])
     dataset_description.save()
+
 
 def move(source_sam, source_dataset_root, target_dataset_root, patientID, manifest):
     if source_sam.is_dir():
@@ -364,9 +376,9 @@ def mock_register_nrrd(origin_folder, case_name):
 
 
 if __name__ == '__main__':
-    save_dir = Path("./workdir")
-    dicom_source_dir = Path("Z:\projects\clinical_Duke_cancer\manifest-1607053360376\Duke-Breast-Cancer-MRI")
-    duke_mri_metadata = Path("Z:\projects\clinical_Duke_cancer\manifest-1607053360376\metadata.csv")
+    save_dir = Path("./workdir2")
+    dicom_source_dir = Path("")
+    duke_mri_metadata = Path("")
     self_dest_dir = Path("./test")
     self_dest_dir.mkdir(exist_ok=True)
     ignore_dirs = ['CL00012_renamed', 'converted_nrrd']
@@ -376,7 +388,8 @@ if __name__ == '__main__':
     createWorkflowDataset(save_dir)
 
     get_bounding_box_data(bounding_box_data_path)
-    case_names = ['Breast_MRI_008', 'Breast_MRI_014']
+    # 575， 681
+    case_names = ['Breast_MRI_575', 'Breast_MRI_681']
 
     read_duke_breast_metadata(duke_mri_metadata)
     # # convert Dicom to NRRD
