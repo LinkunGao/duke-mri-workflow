@@ -1,0 +1,26 @@
+{
+  "_note": "Example manifest. All paths here are fake. Generate a real one with 'python main.py --discover <dicom root>', or copy this shape. Keys starting with _ are ignored.",
+
+  "_format": {
+    "<case id>": {
+      "contrast_dirs": "list of series folders, in the order they map onto contrast_pre, contrast_1, ... One folder holding a whole dynamic series is also fine: it gets split by acquisition number.",
+      "t2_dir": "optional single series folder for T2; omit it or run with --no-t2 to skip"
+    }
+  },
+
+  "SUBJECT-0001": {
+    "contrast_dirs": [
+      "/path/to/dicom/SUBJECT-0001/study-1/4-Axial T1 FS pre",
+      "/path/to/dicom/SUBJECT-0001/study-1/6-Axial T1 FS post"
+    ],
+    "t2_dir": "/path/to/dicom/SUBJECT-0001/study-1/3-Axial T2 ASPIR"
+  },
+
+  "SUBJECT-0002": {
+    "contrast_dirs": [
+      "/path/to/dicom/SUBJECT-0002/dynamic-series"
+    ]
+  },
+
+  "SUBJECT-0003": {}
+}
